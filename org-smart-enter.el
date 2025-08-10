@@ -5,7 +5,7 @@
 ;; Author: artawower <artawower33@gmail.com>
 ;; URL: https://github.com/artawower/org-smart-enter.el
 ;; Package-Requires: ((emacs "27.1") (org "9.4"))
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Keywords: convenience, outlines, hyperlinks, modal editing
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -22,14 +22,35 @@
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;; Provides a smarter RET key for Org-mode:
-;; - If point is on a link, opens the link via `org-open-at-point`.
-;; - Otherwise falls back to the usual `org-return` behavior.
-;; Integrates with Evil and Meow to only override RET in normal state.
+;; Context-aware RET for Org-mode:
+;; - If point is on a link, open it via `org-open-at-point`.
+;; - Otherwise fall back to `org-return`.
+;;
+;; Evil integration:
+;; - Binds RET only in Evil normal state and only while this minor mode is enabled.
+;;
+;; Meow note:
+;; - Meow uses emulation keymaps that have higher priority than minor-mode maps.
+;;   Чисто буфер-локально перебиндить `RET` именно в meow normal без глобального
+;;   эффекта затруднительно. Поэтому ниже есть ОПЦИОНАЛЬНАЯ интеграция:
+;;   глобально перебиндить `RET` в `meow-normal-state-keymap`. По умолчанию она
+;;   отключена, чтобы не влиять на другие буферы. Включается переменной
+;;   `org-smart-enter-enable-meow-integration`.
 
 ;;; Code:
 
 (require 'org)
+
+(defgroup org-smart-enter nil
+  "Smart RET in Org-mode."
+  :group 'org
+  :prefix "org-smart-enter-")
+
+(defcustom org-smart-enter-enable-meow-integration nil
+  "If non-nil, bind RET in `meow-normal-state-keymap' to `org-smart-enter'.
+WARNING: This is GLOBAL for Meow normal state (affects all buffers)."
+  :type 'boolean
+  :group 'org-smart-enter)
 
 (defun org-smart-enter--at-link-p ()
   "Return non-nil if point is on an Org link."
@@ -45,40 +66,38 @@ If point is on a link, open it. Otherwise, do `org-return`."
       (org-open-at-point)
     (org-return)))
 
-(defvar org-smart-enter--evil-keymap nil
-  "Backup of `RET` binding in Evil normal state for restoration.")
-
-(defvar org-smart-enter--meow-keymap nil
-  "Backup of `RET` binding in Meow normal state for restoration.")
+;; Keymap must exist before `define-minor-mode`.
+(defvar org-smart-enter-mode-map
+  (let ((map (make-sparse-keymap)))
+    ;; Default fallback when no modal editor overrides it:
+    (define-key map (kbd "RET") #'org-smart-enter)
+    map)
+  "Keymap for `org-smart-enter-mode'.")
 
 ;;;###autoload
 (define-minor-mode org-smart-enter-mode
-  "Minor mode to make RET in Org-mode context-aware.
-When enabled, pressing RET opens a link at point or does `org-return`."
+  "Minor mode to make RET in Org-mode context-aware."
   :lighter " ↵✓"
-  (if org-smart-enter-mode
-      (progn
-        ;; Integration with Evil
-        (when (featurep 'evil)
-          (setq org-smart-enter--evil-keymap
-                (lookup-key evil-normal-state-local-map (kbd "RET")))
-          (evil-define-key 'normal org-smart-enter-mode-map
-            (kbd "RET") #'org-smart-enter))
-        ;; Integration with Meow
-        (when (featurep 'meow)
-          (setq org-smart-enter--meow-keymap
-                (lookup-key meow-normal-state-keymap (kbd "RET")))
-          (meow-normal-define-key '("RET" . org-smart-enter)))
-        ;; Default binding
-        (define-key org-smart-enter-mode-map (kbd "RET") #'org-smart-enter))
-    ;; Disable mode: restore previous bindings
-    (when (featurep 'evil)
-      (evil-define-key 'normal org-smart-enter-mode-map
-        (kbd "RET") org-smart-enter--evil-keymap))
-    (when (featurep 'meow)
-      (meow-normal-define-key
-       '("RET" . ,org-smart-enter--meow-keymap)))
-    (define-key org-smart-enter-mode-map (kbd "RET") nil)))
+  :keymap org-smart-enter-mode-map
+  ;; Nothing special needed here. Evil integration happens after load (see below).
+  )
+
+;;; Evil integration (only normal state, only while our mode is active).
+(with-eval-after-load 'evil
+  ;; Bind in Evil *for this minor mode's keymap*.
+  ;; Такой биндинг активен только когда активна наша минорка.
+  (evil-define-key 'normal org-smart-enter-mode-map
+                   (kbd "RET") #'org-smart-enter))
+
+;;; Optional Meow integration (GLOBAL for normal state).
+(with-eval-after-load 'meow
+  (when org-smart-enter-enable-meow-integration
+    ;; ВНИМАНИЕ: это глобальный биндинг в normal-state Meow.
+    ;; Его можно включить пользовательски через customize-variable или
+    ;; (setq org-smart-enter-enable-meow-integration t) ДО загрузки этого файла,
+    ;; затем (eval-buffer) или перезапуск Emacs.
+    (when (boundp 'meow-normal-state-keymap)
+      (define-key meow-normal-state-keymap (kbd "RET") #'org-smart-enter))))
 
 ;;;###autoload
 (defun org-smart-enter-setup ()
