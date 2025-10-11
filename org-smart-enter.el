@@ -31,10 +31,10 @@
 ;;
 ;; Meow note:
 ;; - Meow uses emulation keymaps that have higher priority than minor-mode maps.
-;;   Чисто буфер-локально перебиндить `RET` именно в meow normal без глобального
-;;   эффекта затруднительно. Поэтому ниже есть ОПЦИОНАЛЬНАЯ интеграция:
-;;   глобально перебиндить `RET` в `meow-normal-state-keymap`. По умолчанию она
-;;   отключена, чтобы не влиять на другие буферы. Включается переменной
+;;   Buffer-local rebinding of RET in meow normal state without global effects
+;;   is difficult. Therefore, there is OPTIONAL integration below:
+;;   globally rebind RET in `meow-normal-state-keymap`. By default it is
+;;   disabled to avoid affecting other buffers. Enabled via variable
 ;;   `org-smart-enter-enable-meow-integration`.
 
 ;;; Code:
@@ -54,9 +54,10 @@ WARNING: This is GLOBAL for Meow normal state (affects all buffers)."
 
 (defun org-smart-enter--at-link-p ()
   "Return non-nil if point is on an Org link."
-  (or (org-in-regexp org-link-bracket-re 1)
-      (org-in-regexp org-link-plain-re 1)
-      (org-in-regexp org-any-link-re 1)))
+  (and (or (org-in-regexp org-link-bracket-re 1)
+           (org-in-regexp org-link-plain-re 1)
+           (org-in-regexp org-any-link-re 1))
+       (not (looking-back "\\]\\]" (- (point) 2)))))
 
 (defun org-smart-enter ()
   "Smart RET for Org-mode.
@@ -84,18 +85,12 @@ If point is on a link, open it. Otherwise, do `org-return`."
 
 ;;; Evil integration (only normal state, only while our mode is active).
 (with-eval-after-load 'evil
-  ;; Bind in Evil *for this minor mode's keymap*.
-  ;; Такой биндинг активен только когда активна наша минорка.
   (evil-define-key 'normal org-smart-enter-mode-map
                    (kbd "RET") #'org-smart-enter))
 
 ;;; Optional Meow integration (GLOBAL for normal state).
 (with-eval-after-load 'meow
   (when org-smart-enter-enable-meow-integration
-    ;; ВНИМАНИЕ: это глобальный биндинг в normal-state Meow.
-    ;; Его можно включить пользовательски через customize-variable или
-    ;; (setq org-smart-enter-enable-meow-integration t) ДО загрузки этого файла,
-    ;; затем (eval-buffer) или перезапуск Emacs.
     (when (boundp 'meow-normal-state-keymap)
       (define-key meow-normal-state-keymap (kbd "RET") #'org-smart-enter))))
 
